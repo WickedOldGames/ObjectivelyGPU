@@ -367,12 +367,13 @@ struct RenderDeviceInterface {
    * @brief Creates a small, solid-color Texture -- the common "placeholder" pattern
    *   for a sampler slot a shader declares but a given draw never actually reads.
    * @details `type` may be `SDL_GPU_TEXTURETYPE_2D` (@p layerCount ignored, treated
-   *   as 1) or `SDL_GPU_TEXTURETYPE_CUBE` (@p layerCount must be 6); every texel of
-   *   every layer is filled with @p rgba. Always 1x1 per layer/face,
+   *   as 1), `SDL_GPU_TEXTURETYPE_2D_ARRAY` (@p layerCount layers, at most 6), or
+   *   `SDL_GPU_TEXTURETYPE_CUBE` (@p layerCount must be 6); every texel of every
+   *   layer is filled with @p rgba. Always 1x1 per layer/face,
    *   `SDL_GPU_TEXTUREFORMAT_R8G8B8A8_UNORM`, one mip level, `SAMPLER` usage only.
    * @param self The RenderDevice.
-   * @param type `SDL_GPU_TEXTURETYPE_2D` or `SDL_GPU_TEXTURETYPE_CUBE`.
-   * @param layerCount The layer/face count (6 for `_CUBE`, otherwise ignored).
+   * @param type `SDL_GPU_TEXTURETYPE_2D`, `SDL_GPU_TEXTURETYPE_2D_ARRAY`, or `SDL_GPU_TEXTURETYPE_CUBE`.
+   * @param layerCount The layer/face count (6 for `_CUBE`, ignored for `_2D`).
    * @param rgba The fill color, packed as `0xAABBGGRR` (i.e. red in the lowest byte).
    * @return A new, retained Texture. GPU_Asserts on failure. Free with `release`.
    * @memberof RenderDevice

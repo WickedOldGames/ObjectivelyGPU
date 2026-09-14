@@ -400,7 +400,9 @@ static Texture *createTextureFromSurface(RenderDevice *self, SDL_Surface *surfac
  */
 static Texture *createSolidColorTexture(RenderDevice *self, SDL_GPUTextureType type, Uint32 layerCount, Uint32 rgba) {
 
-  assert(type == SDL_GPU_TEXTURETYPE_2D || type == SDL_GPU_TEXTURETYPE_CUBE);
+  assert(type == SDL_GPU_TEXTURETYPE_2D ||
+         type == SDL_GPU_TEXTURETYPE_2D_ARRAY ||
+         type == SDL_GPU_TEXTURETYPE_CUBE);
   assert(layerCount >= 1 && layerCount <= 6);
 
   Uint32 pixels[6];

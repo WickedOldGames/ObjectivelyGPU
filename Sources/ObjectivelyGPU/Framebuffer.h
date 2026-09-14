@@ -86,6 +86,17 @@ typedef struct GPU_FramebufferAttachment {
   bool doubleBuffered;
 
   /**
+   * @brief The number of array layers, or `0` or `1` for a plain 2D attachment.
+   * @details When greater than `1`, the attachment is backed by a 2D array texture and a
+   *   render pass targets one layer at a time via `Framebuffer::colorTargetInfoForLayer`.
+   *   `Framebuffer::resolveColorTexture` returns the whole array, to be sampled with a layer
+   *   index -- e.g. several off-screen views rendered into one texture and sampled by one
+   *   binding. Layer count is fixed for the life of the Framebuffer; `Framebuffer::resize`
+   *   preserves it. Color attachments only; a render pass has a single depth target.
+   */
+  Uint32 layerCount;
+
+  /**
    * @brief The backing texture(s). Multisampled when the Framebuffer's `sampleCount` is
    *   greater than `SDL_GPU_SAMPLECOUNT_1`; sample the corresponding `resolveTextures`
    *   entry instead. Index `1` is only allocated when `doubleBuffered` is `true`.
@@ -116,8 +127,9 @@ typedef struct GPU_FramebufferCreateInfo {
 
   /**
    * @brief The color attachments, one per render target (MRT).
-   * @details Indices `[0, numColorTargets)` are used. Only `format`, `clearColor`, and
-   *   `doubleBuffered` are meaningful here; leave `textures`/`resolveTextures` zeroed.
+   * @details Indices `[0, numColorTargets)` are used. Only `format`, `clearColor`,
+   *   `doubleBuffered`, and `layerCount` are meaningful here; leave `textures`/`resolveTextures`
+   *   zeroed.
    */
   GPU_FramebufferAttachment colorAttachments[GPU_MAX_COLOR_TARGETS];
 
@@ -246,6 +258,7 @@ struct FramebufferInterface {
    * @details Assemble an array of these (one per color target) and pass it to
    *   `CommandBuffer::beginRenderPass`. When multisampled, the resolve target and a
    *   `RESOLVE_AND_STORE` store op are wired in automatically. `assert`s @p index is valid.
+   *   Targets layer `0` of a layered attachment; see `colorTargetInfoForLayer`.
    * @param self The Framebuffer.
    * @param index The color attachment index, in `[0, numColorTargets)`.
    * @param loadOp Load operation at the start of the pass.
@@ -255,6 +268,23 @@ struct FramebufferInterface {
    * @memberof Framebuffer
    */
   SDL_GPUColorTargetInfo (*colorTargetInfo)(const Framebuffer *self, Uint32 index, SDL_GPULoadOp loadOp, SDL_GPUStoreOp storeOp);
+
+  /**
+   * @fn SDL_GPUColorTargetInfo Framebuffer::colorTargetInfoForLayer(const Framebuffer *self, Uint32 index, Uint32 layer, SDL_GPULoadOp loadOp, SDL_GPUStoreOp storeOp)
+   * @brief Returns a populated `SDL_GPUColorTargetInfo` for array layer @p layer of color attachment @p index.
+   * @details As `colorTargetInfo`, but renders into one layer of an attachment declared with a
+   *   `layerCount` greater than `1`. Each layer is a distinct render target, so render them in
+   *   separate passes; `resolveColorTexture` then returns the whole array, to be sampled with a
+   *   layer index. `assert`s @p index and @p layer are valid.
+   * @param self The Framebuffer.
+   * @param index The color attachment index, in `[0, numColorTargets)`.
+   * @param layer The array layer, in `[0, layerCount)`.
+   * @param loadOp Load operation at the start of the pass.
+   * @param storeOp Store operation at the end of the pass.
+   * @return A stack-allocated `SDL_GPUColorTargetInfo` targeting @p layer.
+   * @memberof Framebuffer
+   */
+  SDL_GPUColorTargetInfo (*colorTargetInfoForLayer)(const Framebuffer *self, Uint32 index, Uint32 layer, SDL_GPULoadOp loadOp, SDL_GPUStoreOp storeOp);
 
   /**
    * @fn SDL_GPUDepthStencilTargetInfo Framebuffer::depthTargetInfo(const Framebuffer *self, SDL_GPULoadOp loadOp, SDL_GPUStoreOp storeOp)

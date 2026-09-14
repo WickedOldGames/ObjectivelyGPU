@@ -60,10 +60,11 @@ static Uint32 currentSlot(const Framebuffer *self, const GPU_FramebufferAttachme
 }
 
 /**
- * @fn SDL_GPUColorTargetInfo Framebuffer::colorTargetInfo(const Framebuffer *self, Uint32 index, SDL_GPULoadOp loadOp, SDL_GPUStoreOp storeOp)
+ * @fn SDL_GPUColorTargetInfo Framebuffer::colorTargetInfoForLayer(const Framebuffer *self, Uint32 index, Uint32 layer, SDL_GPULoadOp loadOp, SDL_GPUStoreOp storeOp)
  * @memberof Framebuffer
  */
-static SDL_GPUColorTargetInfo colorTargetInfo(const Framebuffer *self, Uint32 index, SDL_GPULoadOp loadOp, SDL_GPUStoreOp storeOp) {
+static SDL_GPUColorTargetInfo colorTargetInfoForLayer(const Framebuffer *self, Uint32 index, Uint32 layer,
+                                                      SDL_GPULoadOp loadOp, SDL_GPUStoreOp storeOp) {
 
   assert(index < self->numColorAttachments);
 
@@ -71,9 +72,11 @@ static SDL_GPUColorTargetInfo colorTargetInfo(const Framebuffer *self, Uint32 in
   const Uint32 slot = currentSlot(self, attachment);
 
   assert(attachment->textures[slot]);
+  assert(layer == 0 || layer < attachment->layerCount);
 
   SDL_GPUColorTargetInfo info = {
     .texture = attachment->textures[slot]->texture,
+    .layer_or_depth_plane = layer,
     .load_op = loadOp,
     .store_op = storeOp,
     .clear_color = attachment->clearColor,
@@ -92,6 +95,14 @@ static SDL_GPUColorTargetInfo colorTargetInfo(const Framebuffer *self, Uint32 in
   }
 
   return info;
+}
+
+/**
+ * @fn SDL_GPUColorTargetInfo Framebuffer::colorTargetInfo(const Framebuffer *self, Uint32 index, SDL_GPULoadOp loadOp, SDL_GPUStoreOp storeOp)
+ * @memberof Framebuffer
+ */
+static SDL_GPUColorTargetInfo colorTargetInfo(const Framebuffer *self, Uint32 index, SDL_GPULoadOp loadOp, SDL_GPUStoreOp storeOp) {
+  return colorTargetInfoForLayer(self, index, 0, loadOp, storeOp);
 }
 
 /**
@@ -152,6 +163,7 @@ static Framebuffer *initWithDevice(Framebuffer *self, RenderDevice *device, cons
       self->colorAttachments[i].format = info->colorAttachments[i].format;
       self->colorAttachments[i].clearColor = info->colorAttachments[i].clearColor;
       self->colorAttachments[i].doubleBuffered = info->colorAttachments[i].doubleBuffered;
+      self->colorAttachments[i].layerCount = info->colorAttachments[i].layerCount;
     }
     self->depthAttachment.format = info->depthAttachment.format;
     self->depthAttachment.clearDepth = info->depthAttachment.clearDepth;
@@ -199,28 +211,30 @@ static bool resize(Framebuffer *self, const SDL_Size *size) {
 
     GPU_FramebufferAttachment *attachment = &self->colorAttachments[i];
     const Uint32 slots = attachment->doubleBuffered ? 2 : 1;
+    const Uint32 layers = attachment->layerCount ?: 1;
+    const SDL_GPUTextureType type = layers > 1 ? SDL_GPU_TEXTURETYPE_2D_ARRAY : SDL_GPU_TEXTURETYPE_2D;
 
     for (Uint32 slot = 0; slot < slots; slot++) {
 
       attachment->textures[slot] = $(self->device, createTexture, &(SDL_GPUTextureCreateInfo) {
-        .type = SDL_GPU_TEXTURETYPE_2D,
+        .type = type,
         .format = attachment->format,
         .usage = SDL_GPU_TEXTUREUSAGE_COLOR_TARGET | (multisampled ? 0 : SDL_GPU_TEXTUREUSAGE_SAMPLER),
         .width = (Uint32) self->size.w,
         .height = (Uint32) self->size.h,
-        .layer_count_or_depth = 1,
+        .layer_count_or_depth = layers,
         .num_levels = 1,
         .sample_count = self->sampleCount,
       }, NULL);
 
       if (multisampled) {
         attachment->resolveTextures[slot] = $(self->device, createTexture, &(SDL_GPUTextureCreateInfo) {
-          .type = SDL_GPU_TEXTURETYPE_2D,
+          .type = type,
           .format = attachment->format,
           .usage = SDL_GPU_TEXTUREUSAGE_COLOR_TARGET | SDL_GPU_TEXTUREUSAGE_SAMPLER,
           .width = (Uint32) self->size.w,
           .height = (Uint32) self->size.h,
-          .layer_count_or_depth = 1,
+          .layer_count_or_depth = layers,
           .num_levels = 1,
           .sample_count = SDL_GPU_SAMPLECOUNT_1,
         }, NULL);
@@ -298,6 +312,7 @@ static void initialize(Class *clazz) {
   ((ObjectInterface *) clazz->interface)->dealloc = dealloc;
 
   ((FramebufferInterface *) clazz->interface)->colorTargetInfo = colorTargetInfo;
+  ((FramebufferInterface *) clazz->interface)->colorTargetInfoForLayer = colorTargetInfoForLayer;
   ((FramebufferInterface *) clazz->interface)->depthTargetInfo = depthTargetInfo;
   ((FramebufferInterface *) clazz->interface)->initWithDevice = initWithDevice;
   ((FramebufferInterface *) clazz->interface)->pipelineTargetInfo = pipelineTargetInfo;

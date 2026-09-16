@@ -89,6 +89,7 @@ static SDL_GPUColorTargetInfo colorTargetInfoForLayer(const Framebuffer *self, U
     // promoted to RESOLVE_AND_STORE so the multisampled contents survive for any later
     // load-op pass (e.g. UI drawn over a 3D scene) while keeping the resolve current.
     info.resolve_texture = attachment->resolveTextures[slot]->texture;
+    info.resolve_layer = layer;
     if (storeOp == SDL_GPU_STOREOP_STORE) {
       info.store_op = SDL_GPU_STOREOP_RESOLVE_AND_STORE;
     }

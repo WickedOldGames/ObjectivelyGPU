@@ -93,6 +93,8 @@ typedef struct GPU_FramebufferAttachment {
    *   index -- e.g. several off-screen views rendered into one texture and sampled by one
    *   binding. Layer count is fixed for the life of the Framebuffer; `Framebuffer::resize`
    *   preserves it. Color attachments only; a render pass has a single depth target.
+   * @remarks A layered attachment MAY be multisampled, but its layers then share one
+   *   multisample target and each pass MUST clear rather than load; see `textures`.
    */
   Uint32 layerCount;
 
@@ -100,6 +102,9 @@ typedef struct GPU_FramebufferAttachment {
    * @brief The backing texture(s). Multisampled when the Framebuffer's `sampleCount` is
    *   greater than `SDL_GPU_SAMPLECOUNT_1`; sample the corresponding `resolveTextures`
    *   entry instead. Index `1` is only allocated when `doubleBuffered` is `true`.
+   * @remarks A multisampled layered attachment is backed by a single-layer target shared by
+   *   all of its layers, since SDL_gpu has no multisampled array textures; only
+   *   `resolveTextures` is then layered.
    * @private
    */
   Texture *textures[2];

@@ -74,24 +74,32 @@ static SDL_GPUColorTargetInfo colorTargetInfoForLayer(const Framebuffer *self, U
   assert(attachment->textures[slot]);
   assert(layer == 0 || layer < attachment->layerCount);
 
+  const bool multisampled = self->sampleCount > SDL_GPU_SAMPLECOUNT_1;
+  const bool layered = attachment->layerCount > 1;
+
   SDL_GPUColorTargetInfo info = {
     .texture = attachment->textures[slot]->texture,
-    .layer_or_depth_plane = layer,
+
+    // A multisampled layered attachment shares one single-layer multisample target across
+    // its layers, so the layer selects the resolve slice rather than the target; see `resize`.
+    .layer_or_depth_plane = multisampled && layered ? 0 : layer,
     .load_op = loadOp,
     .store_op = storeOp,
     .clear_color = attachment->clearColor,
   };
 
-  if (self->sampleCount > SDL_GPU_SAMPLECOUNT_1) {
+  if (multisampled) {
     assert(attachment->resolveTextures[slot]);
 
     // Resolve the multisampled color into the single-sample resolve target. STORE is
     // promoted to RESOLVE_AND_STORE so the multisampled contents survive for any later
-    // load-op pass (e.g. UI drawn over a 3D scene) while keeping the resolve current.
+    // load-op pass (e.g. UI drawn over a 3D scene) while keeping the resolve current. A
+    // layered attachment resolves outright: the shared target is the next layer's scratch,
+    // so there is nothing its contents could be loaded back into.
     info.resolve_texture = attachment->resolveTextures[slot]->texture;
     info.resolve_layer = layer;
     if (storeOp == SDL_GPU_STOREOP_STORE) {
-      info.store_op = SDL_GPU_STOREOP_RESOLVE_AND_STORE;
+      info.store_op = layered ? SDL_GPU_STOREOP_RESOLVE : SDL_GPU_STOREOP_RESOLVE_AND_STORE;
     }
   }
 
@@ -213,24 +221,31 @@ static bool resize(Framebuffer *self, const SDL_Size *size) {
     GPU_FramebufferAttachment *attachment = &self->colorAttachments[i];
     const Uint32 slots = attachment->doubleBuffered ? 2 : 1;
     const Uint32 layers = attachment->layerCount ?: 1;
-    const SDL_GPUTextureType type = layers > 1 ? SDL_GPU_TEXTURETYPE_2D_ARRAY : SDL_GPU_TEXTURETYPE_2D;
+
+    // SDL_gpu has no multisampled array textures: sample_count must be 1 for
+    // SDL_GPU_TEXTURETYPE_2D_ARRAY. A multisampled layered attachment therefore renders every
+    // layer through one shared single-layer multisample target, and resolves it into the layer
+    // of the array that is actually sampled. Each layer is already a pass of its own, so the
+    // only thing given up is loading a layer's multisample contents back -- which the resolve
+    // makes redundant; see `colorTargetInfoForLayer`.
+    const Uint32 targetLayers = multisampled ? 1 : layers;
 
     for (Uint32 slot = 0; slot < slots; slot++) {
 
       attachment->textures[slot] = $(self->device, createTexture, &(SDL_GPUTextureCreateInfo) {
-        .type = type,
+        .type = targetLayers > 1 ? SDL_GPU_TEXTURETYPE_2D_ARRAY : SDL_GPU_TEXTURETYPE_2D,
         .format = attachment->format,
         .usage = SDL_GPU_TEXTUREUSAGE_COLOR_TARGET | (multisampled ? 0 : SDL_GPU_TEXTUREUSAGE_SAMPLER),
         .width = (Uint32) self->size.w,
         .height = (Uint32) self->size.h,
-        .layer_count_or_depth = layers,
+        .layer_count_or_depth = targetLayers,
         .num_levels = 1,
         .sample_count = self->sampleCount,
       }, NULL);
 
       if (multisampled) {
         attachment->resolveTextures[slot] = $(self->device, createTexture, &(SDL_GPUTextureCreateInfo) {
-          .type = type,
+          .type = layers > 1 ? SDL_GPU_TEXTURETYPE_2D_ARRAY : SDL_GPU_TEXTURETYPE_2D,
           .format = attachment->format,
           .usage = SDL_GPU_TEXTUREUSAGE_COLOR_TARGET | SDL_GPU_TEXTUREUSAGE_SAMPLER,
           .width = (Uint32) self->size.w,
